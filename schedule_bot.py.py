@@ -29,7 +29,14 @@ CONFIG = {
         "107л": {"lat": 59.9348, "lon": 30.3356, "name": "Лекционный корпус", "address": "пр.Кирова, д.1"},
         "104л": {"lat": 59.9348, "lon": 30.3356, "name": "Лекционный корпус", "address": "пр.Кирова, д.1"},
         "505л": {"lat": 59.9348, "lon": 30.3356, "name": "Лекционный корпус", "address": "пр.Кирова, д.1"},
-        "406с": {"lat": 59.9350, "lon": 30.3358, "name": "Корпус С", "address": "Советская, 14"}
+        "406с": {"lat": 59.9350, "lon": 30.3358, "name": "Корпус С", "address": "Советская, 14"},
+        "413b": {"lat": 59.9343, "lon": 30.3352, "name": "Корпус B", "address": "пр.Кирова,д.2"},
+        "312b": {"lat": 59.9343, "lon": 30.3352, "name": "Корпус B", "address": "пр.Кирова,д.2"},
+        "417b": {"lat": 59.9343, "lon": 30.3352, "name": "Корпус B", "address": "пр.Кирова,д.2"},
+        "523с": {"lat": 59.9350, "lon": 30.3358, "name": "Корпус С", "address": "Советская, 14"},
+        "14ап": {"lat": 59.9352, "lon": 30.3360, "name": "Корпус П", "address": "Советская, 10"},
+        "513л": {"lat": 59.9348, "lon": 30.3356, "name": "Лекционный корпус", "address": "пр.Кирова, д.1"},
+        "кск": {"lat": 59.9355, "lon": 30.3365, "name": "Корпус КСК", "address": "Колхозная,15"}
     }
 }
 
@@ -40,20 +47,20 @@ faq_database = {}
 def init_db():
     conn = sqlite3.connect('schedule.db')
     cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS schedule_week1 (
-            id INTEGER PRIMARY KEY,
-            data TEXT NOT NULL,
-            last_updated TEXT NOT NULL
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS schedule_week2 (
-            id INTEGER PRIMARY KEY,
-            data TEXT NOT NULL,
-            last_updated TEXT NOT NULL
-        )
-    ''')
+    
+    # Расписание на 4 недели вперед
+    for week in range(1, 5):
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS schedule_week{week} (
+                id INTEGER PRIMARY KEY,
+                data TEXT NOT NULL,
+                last_updated TEXT NOT NULL,
+                week_start_date TEXT NOT NULL
+            )
+        ''')
+        cursor.execute(f"INSERT OR IGNORE INTO schedule_week{week} (id, data, last_updated, week_start_date) VALUES (1, '{{}}', '', '')")
+    
+    # Остальные таблицы
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS polls (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,8 +90,26 @@ def init_db():
             added_at TEXT NOT NULL
         )
     ''')
-    cursor.execute("INSERT OR IGNORE INTO schedule_week1 (id, data, last_updated) VALUES (1, '{}', '')")
-    cursor.execute("INSERT OR IGNORE INTO schedule_week2 (id, data, last_updated) VALUES (1, '{}', '')")
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS homework (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subject TEXT NOT NULL,
+            task TEXT NOT NULL,
+            added_by INTEGER NOT NULL,
+            added_at TEXT NOT NULL,
+            deadline TEXT
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_number INTEGER NOT NULL,
+            subject TEXT NOT NULL,
+            taken_by INTEGER NOT NULL,
+            taken_at TEXT NOT NULL,
+            student_name TEXT
+        )
+    ''')
     
     # Загружаем FAQ из базы
     cursor.execute("SELECT keyword, answer FROM faq")
@@ -94,26 +119,43 @@ def init_db():
     conn.commit()
     conn.close()
 
+# Автоматическое определение номера недели
+def get_current_week_number():
+    today = datetime.datetime.now()
+    year_start = datetime.datetime(today.year, 9, 1)
+    week_num = (today - year_start).days // 7 + 1
+    return (week_num % 4) or 4
+
 # Сохранение расписания в БД
-def save_schedule(schedule_data):
+def save_schedule(schedule_data, week_number=None):
+    if week_number is None:
+        week_number = CONFIG['current_week']
+    
     conn = sqlite3.connect('schedule.db')
     cursor = conn.cursor()
     current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    table_name = f"schedule_week{CONFIG['current_week']}"
-    cursor.execute(f"UPDATE {table_name} SET data = ?, last_updated = ? WHERE id = 1", 
-                  (json.dumps(schedule_data, ensure_ascii=False), current_time))
+    today = datetime.datetime.now()
+    monday = today - datetime.timedelta(days=today.weekday())
+    week_start = monday.strftime("%Y-%m-%d")
+    
+    table_name = f"schedule_week{week_number}"
+    cursor.execute(f"UPDATE {table_name} SET data = ?, last_updated = ?, week_start_date = ? WHERE id = 1", 
+                  (json.dumps(schedule_data, ensure_ascii=False), current_time, week_start))
     
     conn.commit()
     conn.close()
     return current_time
 
 # Загрузка расписания из БД
-def load_schedule():
+def load_schedule(week_number=None):
+    if week_number is None:
+        week_number = CONFIG['current_week']
+    
     conn = sqlite3.connect('schedule.db')
     cursor = conn.cursor()
     
-    table_name = f"schedule_week{CONFIG['current_week']}"
+    table_name = f"schedule_week{week_number}"
     cursor.execute(f"SELECT data, last_updated FROM {table_name} WHERE id = 1")
     
     data, last_updated = cursor.fetchone()
@@ -139,30 +181,18 @@ time_slots = {
     "6": "18:15—19:50"
 }
 
-# Создание клавиатуры
-def create_keyboard():
+# Создание клавиатуры для расписания (3 кнопки)
+def create_schedule_keyboard():
     keyboard = VkKeyboard(inline=True)
     
-    # Кнопка Сегодня
-    if CONFIG["current_view"] == "today":
-        keyboard.add_button('Сегодня', color=VkKeyboardColor.POSITIVE)
-    else:
-        keyboard.add_button('Сегодня', color=VkKeyboardColor.SECONDARY)
-    
-    # Кнопки Неделя и След неделя
-    if CONFIG["current_view"] == "week":
-        keyboard.add_button('Неделя', color=VkKeyboardColor.POSITIVE)
-    else:
-        keyboard.add_button('Неделя', color=VkKeyboardColor.SECONDARY)
-    
-    if CONFIG["current_view"] == "next_week":
-        keyboard.add_button('След неделя', color=VkKeyboardColor.POSITIVE)
-    else:
-        keyboard.add_button('След неделя', color=VkKeyboardColor.SECONDARY)
+    keyboard.add_button('📅 Завтра', color=VkKeyboardColor.PRIMARY)
+    keyboard.add_button('📋 Неделя', color=VkKeyboardColor.SECONDARY)
+    keyboard.add_line()
+    keyboard.add_button('📋 След неделя', color=VkKeyboardColor.SECONDARY)
     
     return keyboard.get_keyboard()
 
-# Функция создания клавиатуры для опросов
+# Создание клавиатуры для опросов
 def create_poll_keyboard(poll_type, poll_id=None):
     keyboard = VkKeyboard(inline=True)
     
@@ -184,28 +214,31 @@ def create_poll_keyboard(poll_type, poll_id=None):
 # Получение даты для дня недели
 def get_date_for_weekday(day_index, week_offset=0):
     today = datetime.datetime.now()
-    # Находим понедельник текущей недели
     monday = today - datetime.timedelta(days=today.weekday())
-    # Добавляем смещение недели и дня
     target_date = monday + datetime.timedelta(weeks=week_offset, days=day_index)
     return target_date
 
-# Форматирование расписания на сегодня
-def format_schedule_today(schedule_data, last_updated=""):
+# Форматирование расписания на конкретный день
+def format_schedule_day(schedule_data, day_offset=0):
     if not schedule_data:
         return "Расписание пока не добавлено."
     
-    today = datetime.datetime.now()
-    day_name = days_of_week[today.weekday()]
-    day_name_cap = days_of_week_capitalized[today.weekday()]
-    day_num = today.day
-    month_name = months[today.month - 1]
-    date_str = f"{day_name_cap}, {day_num} {month_name}"
+    target_date = datetime.datetime.now() + datetime.timedelta(days=day_offset)
+    day_name = days_of_week[target_date.weekday()]
+    day_name_cap = days_of_week_capitalized[target_date.weekday()]
+    day_num = target_date.day
+    month_name = months[target_date.month - 1]
     
     separator = "·" * 60
-    
     response = f"{separator}\n"
-    response += f"📅 {date_str}\n"
+    
+    if day_offset == 0:
+        response += f"🎯 {day_name_cap}, {day_num} {month_name} (сегодня)\n"
+    elif day_offset == 1:
+        response += f"📅 {day_name_cap}, {day_num} {month_name} (завтра)\n"
+    else:
+        response += f"📅 {day_name_cap}, {day_num} {month_name}\n"
+    
     response += f"{separator}\n\n"
     
     if day_name in schedule_data and schedule_data[day_name]:
@@ -219,18 +252,10 @@ def format_schedule_today(schedule_data, last_updated=""):
     else:
         response += " Занятий нет\n\n"
     
-    if last_updated:
-        try:
-            update_dt = datetime.datetime.strptime(last_updated, "%Y-%m-%d %H:%M:%S")
-            update_str = update_dt.strftime(f"%d {months[update_dt.month - 1]} %Y в %H:%M")
-            response += f"🔄 Обновлено: {update_str}"
-        except:
-            response += f"🔄 Обновлено: {last_updated}"
-    
     return response
 
 # Форматирование расписания на всю неделю
-def format_schedule_week(schedule_data, last_updated="", week_offset=0):
+def format_schedule_week(schedule_data, week_offset=0):
     if not schedule_data:
         return "Расписание пока не добавлено."
     
@@ -241,7 +266,6 @@ def format_schedule_week(schedule_data, last_updated="", week_offset=0):
     today_name = days_of_week[today.weekday()]
     
     for i, day_name in enumerate(days_of_week):
-        # Получаем дату для этого дня недели
         day_date = get_date_for_weekday(i, week_offset)
         day_num = day_date.day
         month_name = months[day_date.month - 1]
@@ -249,11 +273,13 @@ def format_schedule_week(schedule_data, last_updated="", week_offset=0):
         
         response += f"{separator}\n"
         
-        # Проверяем, сегодня ли это
         is_today = (week_offset == 0 and day_name == today_name)
+        is_tomorrow = (week_offset == 0 and i == (today.weekday() + 1) % 7)
         
         if is_today:
             response += f"🎯 {day_name_cap}, {day_num} {month_name} (сегодня)\n"
+        elif is_tomorrow:
+            response += f"📅 {day_name_cap}, {day_num} {month_name} (завтра)\n"
         else:
             response += f"📅 {day_name_cap}, {day_num} {month_name}\n"
         
@@ -269,14 +295,6 @@ def format_schedule_week(schedule_data, last_updated="", week_offset=0):
                 response += f"🚪 Аудитория: {lesson['room']}\n\n"
         else:
             response += " Занятий нет\n\n"
-    
-    if last_updated:
-        try:
-            update_dt = datetime.datetime.strptime(last_updated, "%Y-%m-%d %H:%M:%S")
-            update_str = update_dt.strftime(f"%d {months[update_dt.month - 1]} %Y в %H:%M")
-            response += f"🔄 Обновлено: {update_str}"
-        except:
-            response += f"🔄 Обновлено: {last_updated}"
     
     return response
 
@@ -300,7 +318,70 @@ def send_message(peer_id, message, keyboard=None):
 def is_admin(user_id):
     return user_id == CONFIG['admin_id']
 
-# Создание опроса
+# Функции для домашних заданий
+def add_homework(subject, task, user_id, deadline=None):
+    conn = sqlite3.connect('schedule.db')
+    cursor = conn.cursor()
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    cursor.execute(
+        "INSERT INTO homework (subject, task, added_by, added_at, deadline) VALUES (?, ?, ?, ?, ?)",
+        (subject, task, user_id, current_time, deadline)
+    )
+    
+    conn.commit()
+    conn.close()
+    return True
+
+def get_homework(subject=None):
+    conn = sqlite3.connect('schedule.db')
+    cursor = conn.cursor()
+    
+    if subject:
+        cursor.execute("SELECT subject, task, added_at, deadline FROM homework WHERE subject LIKE ? ORDER BY added_at DESC", (f'%{subject}%',))
+    else:
+        cursor.execute("SELECT subject, task, added_at, deadline FROM homework ORDER BY added_at DESC")
+    
+    homework = cursor.fetchall()
+    conn.close()
+    return homework
+
+# Функции для докладов
+def take_report(report_number, subject, user_id, student_name):
+    conn = sqlite3.connect('schedule.db')
+    cursor = conn.cursor()
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    cursor.execute("SELECT taken_by FROM reports WHERE report_number = ? AND subject = ?", (report_number, subject))
+    existing = cursor.fetchone()
+    
+    if existing:
+        conn.close()
+        return False, "❌ Этот доклад уже занят!"
+    
+    cursor.execute(
+        "INSERT INTO reports (report_number, subject, taken_by, taken_at, student_name) VALUES (?, ?, ?, ?, ?)",
+        (report_number, subject, user_id, current_time, student_name)
+    )
+    
+    conn.commit()
+    conn.close()
+    return True, "✅ Доклад успешно закреплен за вами!"
+
+def get_reports(subject=None):
+    conn = sqlite3.connect('schedule.db')
+    cursor = conn.cursor()
+    
+    if subject:
+        cursor.execute("SELECT report_number, student_name, taken_at FROM reports WHERE subject = ? ORDER BY report_number", (subject,))
+    else:
+        cursor.execute("SELECT report_number, subject, student_name, taken_at FROM reports ORDER BY subject, report_number")
+    
+    reports = cursor.fetchall()
+    conn.close()
+    return reports
+
+# Функции для опросов
 def create_poll(question, options, creator_id):
     conn = sqlite3.connect('schedule.db')
     cursor = conn.cursor()
@@ -317,7 +398,6 @@ def create_poll(question, options, creator_id):
     conn.close()
     return poll_id
 
-# Голосование в опросе
 def vote_in_poll(poll_id, user_id, option_index):
     conn = sqlite3.connect('schedule.db')
     cursor = conn.cursor()
@@ -327,9 +407,7 @@ def vote_in_poll(poll_id, user_id, option_index):
     
     if result:
         votes = json.loads(result[0])
-        # Удаляем предыдущий голос пользователя
         votes = {k: v for k, v in votes.items() if v != user_id}
-        # Добавляем новый голос
         votes[str(option_index)] = user_id
         
         cursor.execute("UPDATE polls SET votes = ? WHERE poll_id = ?", (json.dumps(votes), poll_id))
@@ -337,7 +415,6 @@ def vote_in_poll(poll_id, user_id, option_index):
     
     conn.close()
 
-# Получение результатов опроса
 def get_poll_results(poll_id):
     conn = sqlite3.connect('schedule.db')
     cursor = conn.cursor()
@@ -352,7 +429,6 @@ def get_poll_results(poll_id):
         options = json.loads(options_json)
         votes = json.loads(votes_json)
         
-        # Подсчет голосов
         results = {i: 0 for i in range(len(options))}
         for option_index in votes.values():
             results[int(option_index)] += 1
@@ -360,7 +436,7 @@ def get_poll_results(poll_id):
         return question, options, results
     return None, None, None
 
-# Сохранение вопроса
+# Функции для FAQ
 def save_question(question, user_id):
     conn = sqlite3.connect('schedule.db')
     cursor = conn.cursor()
@@ -374,42 +450,34 @@ def save_question(question, user_id):
     conn.commit()
     conn.close()
 
-# Поиск ответа на вопрос
 def find_answer(question):
     question_lower = question.lower()
     
-    # Поиск по ключевым словам
     for keyword, answer in faq_database.items():
         if keyword in question_lower:
             return answer
     
-    # Если ответ не найден
     return None
 
-# Добавление FAQ админом
 def add_faq(keyword, answer, admin_id):
     conn = sqlite3.connect('schedule.db')
     cursor = conn.cursor()
     current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # Добавляем в базу
     cursor.execute(
         "INSERT INTO faq (keyword, answer, added_by, added_at) VALUES (?, ?, ?, ?)",
         (keyword.lower(), answer, admin_id, current_time)
     )
     
-    # Обновляем кэш
     faq_database[keyword.lower()] = answer
     
     conn.commit()
     conn.close()
     return True
 
-# Просмотр всех FAQ
 def get_all_faq():
     return list(faq_database.items())
 
-# Просмотр неотвеченных вопросов
 def get_unanswered_questions():
     conn = sqlite3.connect('schedule.db')
     cursor = conn.cursor()
@@ -420,18 +488,15 @@ def get_unanswered_questions():
     conn.close()
     return questions
 
-# Функции для работы с картами
+# Функции для карт
 def get_location_map(room_number):
-    """Возвращает ссылку на карту с меткой"""
     room_lower = room_number.lower()
     
-    # Ищем точное совпадение
     if room_lower in CONFIG['locations']:
         location = CONFIG['locations'][room_lower]
         lat, lon = location['lat'], location['lon']
         return f"📍 {location['name']}\n🚪 Аудитория: {room_number}\n📫 Адрес: {location['address']}\n\n🗺️ Карта: https://yandex.ru/maps/?pt={lon},{lat}&z=17&l=map"
     
-    # Ищем по частичному совпадению (только цифры)
     room_digits = ''.join(filter(str.isdigit, room_number))
     for room_key, location in CONFIG['locations'].items():
         if room_digits in room_key:
@@ -440,7 +505,6 @@ def get_location_map(room_number):
     return None
 
 def find_room_in_schedule(room_query):
-    """Ищет аудиторию в расписании"""
     schedule, _ = load_schedule()
     found_lessons = []
     
@@ -460,6 +524,9 @@ def find_room_in_schedule(room_query):
 
 # Инициализируем БД
 init_db()
+
+# Автоматически определяем текущую неделю
+CONFIG['current_week'] = get_current_week_number()
 
 # Подключаемся к VK
 vk_session = vk_api.VkApi(token=CONFIG['token'])
@@ -486,36 +553,97 @@ for event in longpoll.listen():
         
         # Обработка команд в беседе
         if event.from_chat:
+            # Основные команды расписания
             if msg == 'расписание' or msg == 'сегодня':
-                CONFIG["current_view"] = "today"
                 schedule, last_updated = load_schedule()
-                response = format_schedule_today(schedule, last_updated)
-                send_message(peer_id, response, create_keyboard())
+                response = format_schedule_day(schedule, 0)
+                if last_updated:
+                    response += f"\n🔄 Обновлено: {last_updated}"
+                send_message(peer_id, response, create_schedule_keyboard())
+            
+            elif msg == 'завтра':
+                schedule, last_updated = load_schedule()
+                response = format_schedule_day(schedule, 1)
+                if last_updated:
+                    response += f"\n🔄 Обновлено: {last_updated}"
+                send_message(peer_id, response, create_schedule_keyboard())
             
             elif msg == 'неделя':
-                CONFIG["current_week"] = 1
-                CONFIG["current_view"] = "week"
                 schedule, last_updated = load_schedule()
-                response = format_schedule_week(schedule, last_updated, 0)
-                send_message(peer_id, response, create_keyboard())
+                response = format_schedule_week(schedule, 0)
+                if last_updated:
+                    response += f"\n🔄 Обновлено: {last_updated}"
+                send_message(peer_id, response, create_schedule_keyboard())
             
             elif msg == 'след неделя':
-                CONFIG["current_week"] = 2
-                CONFIG["current_view"] = "next_week"
-                schedule, last_updated = load_schedule()
-                response = format_schedule_week(schedule, last_updated, 1)
-                send_message(peer_id, response, create_keyboard())
+                next_week = (CONFIG['current_week'] % 4) + 1
+                schedule, last_updated = load_schedule(next_week)
+                response = f"📅 Следующая неделя\n\n" + format_schedule_week(schedule, 1)
+                if last_updated:
+                    response += f"\n🔄 Обновлено: {last_updated}"
+                send_message(peer_id, response, create_schedule_keyboard())
+            
+            # Домашние задания
+            elif msg.startswith('дз по '):
+                subject = msg[6:].strip()
+                homework_list = get_homework(subject)
+                if homework_list:
+                    response = f"📚 ДЗ по {subject}:\n\n"
+                    for hw in homework_list:
+                        response += f"📝 {hw[1]}\n"
+                        if hw[3]:
+                            response += f"⏰ До: {hw[3]}\n"
+                        response += f"🕐 Добавлено: {hw[2]}\n\n"
+                else:
+                    response = f"📚 По {subject} домашних заданий нет"
+                send_message(peer_id, response)
+            
+            elif msg == 'все дз':
+                homework_list = get_homework()
+                if homework_list:
+                    response = "📚 Все домашние задания:\n\n"
+                    for hw in homework_list:
+                        response += f"📖 {hw[0]}: {hw[1]}\n"
+                        if hw[3]:
+                            response += f"⏰ До: {hw[3]}\n"
+                        response += f"🕐 {hw[2]}\n\n"
+                else:
+                    response = "📚 Домашних заданий нет"
+                send_message(peer_id, response)
+            
+            # Доклады
+            elif msg.startswith('беру доклад '):
+                try:
+                    parts = original_text[12:].split(' по ')
+                    if len(parts) == 2:
+                        report_num = int(parts[0].strip())
+                        subject = parts[1].strip()
+                        success, message = take_report(report_num, subject, user_id, f"@id{user_id}")
+                        send_message(peer_id, message)
+                    else:
+                        send_message(peer_id, "❌ Формат: Беру доклад [номер] по [предмет]")
+                except:
+                    send_message(peer_id, "❌ Ошибка. Формат: Беру доклад [номер] по [предмет]")
+            
+            elif msg.startswith('доклады по '):
+                subject = msg[11:].strip()
+                reports = get_reports(subject)
+                if reports:
+                    response = f"📋 Доклады по {subject}:\n\n"
+                    for report in reports:
+                        response += f"📄 Доклад {report[0]}: {report[1]}\n"
+                    send_message(peer_id, response)
+                else:
+                    send_message(peer_id, f"📋 По {subject} докладов нет")
             
             # Поиск аудитории на карте
             elif msg.startswith('!где '):
                 room_query = original_text[5:].strip()
                 if room_query:
-                    # Пытаемся найти на карте
                     map_info = get_location_map(room_query)
                     if map_info:
                         send_message(peer_id, map_info)
                     else:
-                        # Ищем в расписании
                         found_lessons = find_room_in_schedule(room_query)
                         if found_lessons:
                             response = f"🔍 Найдено в расписании для '{room_query}':\n\n"
@@ -525,7 +653,7 @@ for event in longpoll.listen():
                                 response += f"🚪 {lesson['room']}\n\n"
                             send_message(peer_id, response)
                         else:
-                            send_message(peer_id, f"❌ Аудитория '{room_query}' не найдена ни на карте, ни в расписании")
+                            send_message(peer_id, f"❌ Аудитория '{room_query}' не найдена")
                 else:
                     send_message(peer_id, "❌ Укажите номер аудитории после !где")
             
@@ -551,7 +679,6 @@ for event in longpoll.listen():
                         time_range = time_slots.get(lesson['pair'], '')
                         if time_range:
                             start_time = time_range.split('—')[0]
-                            # Простой поиск текущей пары
                             if current_time >= start_time:
                                 current_lesson = lesson
                     
@@ -575,17 +702,14 @@ for event in longpoll.listen():
             elif msg.startswith('!вопрос '):
                 question = original_text[8:].strip()
                 if question:
-                    # Сохраняем вопрос в базу
                     save_question(question, user_id)
                     
-                    # Ищем ответ в базе знаний
                     answer = find_answer(question)
                     if answer:
                         send_message(peer_id, f"🤖 {answer}")
                     else:
                         send_message(peer_id, "❌ Пока не знаю ответ на этот вопрос. Администратору отправлено уведомление!")
                         
-                        # Уведомляем админа
                         if CONFIG['admin_id']:
                             admin_msg = f"📩 Новый вопрос от @id{user_id}:\n{question}"
                             send_message(CONFIG['admin_id'], admin_msg)
@@ -693,10 +817,25 @@ for event in longpoll.listen():
                 else:
                     send_message(peer_id, "✅ Нет неотвеченных вопросов")
             
+            # Команды для домашних заданий
+            elif msg.startswith('!добавить дз '):
+                try:
+                    parts = original_text[13:].split(' по ')
+                    if len(parts) == 2:
+                        task = parts[0].strip()
+                        subject = parts[1].strip()
+                        if add_homework(subject, task, user_id):
+                            send_message(peer_id, f"✅ ДЗ добавлено:\nПредмет: {subject}\nЗадание: {task}")
+                        else:
+                            send_message(peer_id, "❌ Ошибка добавления ДЗ")
+                    else:
+                        send_message(peer_id, "❌ Формат: !добавить дз [задание] по [предмет]")
+                except:
+                    send_message(peer_id, "❌ Ошибка в формате команды")
+            
             # Добавление аудитории на карту
             elif msg.startswith('!добавить аудиторию '):
                 try:
-                    # Формат: !добавить аудиторию номер;название;адрес;широта;долгота
                     parts = original_text[20:].split(';')
                     if len(parts) == 5:
                         room = parts[0].strip().lower()
@@ -732,7 +871,7 @@ for event in longpoll.listen():
                             announcement = f"🎉 РАСПИСАНИЕ ОБНОВЛЕНО! 🎉\n\n{week_status}\n\n"
                             week_offset = 0 if CONFIG["current_week"] == 1 else 1
                             announcement += format_schedule_week(new_schedule, update_time, week_offset)
-                            send_message(chat_id, announcement, create_keyboard())
+                            send_message(chat_id, announcement, create_schedule_keyboard())
                         except Exception as e:
                             send_message(peer_id, f"❌ Не удалось отправить в беседу: {e}")
                     else:
