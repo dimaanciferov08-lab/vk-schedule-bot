@@ -7,6 +7,8 @@ import sqlite3
 import datetime
 import random
 import requests
+import time
+import threading
 
 # !!! ЗАПОЛНИ ЭТИ ДАННЫЕ СВОИМИ !!!
 CONFIG = {
@@ -14,18 +16,13 @@ CONFIG = {
     "token": "vk1.a.Y2xBv4alWQ55rd1IxtkpKc48ibKqpQ1x0Wyc9Hv0z18elxu3JaSBfCi7F5sJ9H4eKy1jg3iqFOjQTkQyCIYdnf77mcezdC__MLiyRi9Xwfus_uLz7UWd9AR8VPQDr7uMEiD1NxadTzqUllP7p4uqWixuefYkm6ryhgMbFLPSo-hnXKyt0XQ4qvpfIG5kLWlJoH7Ivew1yhgiKmtDWhbHYw",
     "admin_id": 238448950,
     "current_week": 1,
-    "current_view": "today",
+    "chat_id": None,  # ID беседы для автоматических уведомлений
     "locations": {
         "101": {"lat": 59.9343, "lon": 30.3351, "name": "Главный корпус", "address": "ул. Примерная, 1"},
         "201": {"lat": 59.9345, "lon": 30.3353, "name": "Второй корпус", "address": "ул. Примерная, 2"},
         "301": {"lat": 59.9347, "lon": 30.3355, "name": "Третий корпус", "address": "ул. Примерная, 3"},
-        "405": {"lat": 59.9349, "lon": 30.3357, "name": "Лабораторный корпус", "address": "ул. Примерная, 4"},
-        "505": {"lat": 59.9351, "lon": 30.3359, "name": "Научный корпус", "address": "ул. Примерная, 5"},
-        "актовый зал": {"lat": 59.9344, "lon": 30.3352, "name": "Актовый зал", "address": "ул. Егорова, 15"},
-        "спортзал": {"lat": 59.9346, "lon": 30.3354, "name": "Спортивный зал", "address": "ул. Спортивная, 10"},
         "223с": {"lat": 59.9350, "lon": 30.3358, "name": "Корпус С", "address": "Советская, 14"},
-        "14лт": {"lat": 59.9352, "lon": 30.3360, "name": "Корпус Т", "address": "Советская, 10"},
-        "111л": {"lat": 59.9348, "lon": 30.3356, "name": "Лекционный корпус", "address": "пр.Кирова, д.1"},
+        "14ап": {"lat": 59.9352, "lon": 30.3360, "name": "Корпус П", "address": "Советская, 10"},
         "107л": {"lat": 59.9348, "lon": 30.3356, "name": "Лекционный корпус", "address": "пр.Кирова, д.1"},
         "104л": {"lat": 59.9348, "lon": 30.3356, "name": "Лекционный корпус", "address": "пр.Кирова, д.1"},
         "505л": {"lat": 59.9348, "lon": 30.3356, "name": "Лекционный корпус", "address": "пр.Кирова, д.1"},
@@ -34,14 +31,10 @@ CONFIG = {
         "312b": {"lat": 59.9343, "lon": 30.3352, "name": "Корпус B", "address": "пр.Кирова,д.2"},
         "417b": {"lat": 59.9343, "lon": 30.3352, "name": "Корпус B", "address": "пр.Кирова,д.2"},
         "523с": {"lat": 59.9350, "lon": 30.3358, "name": "Корпус С", "address": "Советская, 14"},
-        "14ап": {"lat": 59.9352, "lon": 30.3360, "name": "Корпус П", "address": "Советская, 10"},
         "513л": {"lat": 59.9348, "lon": 30.3356, "name": "Лекционный корпус", "address": "пр.Кирова, д.1"},
         "кск": {"lat": 59.9355, "lon": 30.3365, "name": "Корпус КСК", "address": "Колхозная,15"}
     }
 }
-
-# База знаний вопросов-ответов
-faq_database = {}
 
 # Список группы
 GROUP_LIST = {
@@ -64,6 +57,9 @@ GROUP_LIST = {
     "17": "Яременко Антон"
 }
 
+# Словарь для хранения сообщений, которые нужно удалить
+messages_to_delete = {}
+
 # Инициализация базы данных SQLite
 def init_db():
     conn = sqlite3.connect('schedule.db')
@@ -81,52 +77,11 @@ def init_db():
         ''')
         cursor.execute(f"INSERT OR IGNORE INTO schedule_week{week} (id, data, last_updated, week_start_date) VALUES (1, '{{}}', '', '')")
     
-    # Остальные таблицы
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS polls (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            poll_id TEXT NOT NULL,
-            question TEXT NOT NULL,
-            options TEXT NOT NULL,
-            votes TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            created_by INTEGER NOT NULL
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS questions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            question TEXT NOT NULL,
-            asked_by INTEGER NOT NULL,
-            asked_at TEXT NOT NULL,
-            answered BOOLEAN DEFAULT 0
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS faq (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            keyword TEXT NOT NULL,
-            answer TEXT NOT NULL,
-            added_by INTEGER NOT NULL,
-            added_at TEXT NOT NULL
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS homework (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            subject TEXT NOT NULL,
-            task TEXT NOT NULL,
-            added_by INTEGER NOT NULL,
-            added_at TEXT NOT NULL,
-            deadline TEXT
-        )
-    ''')
-    
     # Новая таблица для системы докладов
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS reports_system (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            subject_name TEXT NOT NULL,
+            subject_name TEXT NOT NULL UNIQUE,
             report_data TEXT NOT NULL,
             max_reports_per_student INTEGER DEFAULT 1,
             created_by INTEGER NOT NULL,
@@ -165,11 +120,6 @@ def init_db():
         )
     ''')
     
-    # Загружаем FAQ из базы
-    cursor.execute("SELECT keyword, answer FROM faq")
-    for keyword, answer in cursor.fetchall():
-        faq_database[keyword] = answer
-    
     # Добавляем основного админа если его нет
     cursor.execute("SELECT 1 FROM admins WHERE user_id = ?", (CONFIG['admin_id'],))
     if not cursor.fetchone():
@@ -180,6 +130,24 @@ def init_db():
     
     conn.commit()
     conn.close()
+
+# Функция для удаления сообщений через 5 минут
+def schedule_message_deletion(peer_id, message_id, delay=300):  # 300 секунд = 5 минут
+    def delete_message():
+        time.sleep(delay)
+        try:
+            vk_session.method('messages.delete', {
+                'peer_id': peer_id,
+                'message_ids': message_id,
+                'delete_for_all': 1
+            })
+            print(f"Сообщение {message_id} удалено")
+        except Exception as e:
+            print(f"Ошибка удаления сообщения: {e}")
+    
+    thread = threading.Thread(target=delete_message)
+    thread.daemon = True
+    thread.start()
 
 # Функции для системы докладов
 def register_student(user_id, student_number):
@@ -414,17 +382,7 @@ def add_admin(new_admin_id, added_by):
         conn.close()
         return False, f"❌ Ошибка добавления администратора: {str(e)}"
 
-# Остальные функции остаются без изменений (load_schedule, save_schedule, format_schedule_day, и т.д.)
-# ... [здесь должны быть все остальные функции из предыдущего кода] ...
-
-# Автоматическое определение номера недели
-def get_current_week_number():
-    today = datetime.datetime.now()
-    year_start = datetime.datetime(today.year, 9, 1)
-    week_num = (today - year_start).days // 7 + 1
-    return (week_num % 4) or 4
-
-# Сохранение расписания в БД
+# Функции для расписания
 def save_schedule(schedule_data, week_number=None):
     if week_number is None:
         week_number = CONFIG['current_week']
@@ -445,7 +403,6 @@ def save_schedule(schedule_data, week_number=None):
     conn.close()
     return current_time
 
-# Загрузка расписания из БД
 def load_schedule(week_number=None):
     if week_number is None:
         week_number = CONFIG['current_week']
@@ -456,9 +413,13 @@ def load_schedule(week_number=None):
     table_name = f"schedule_week{week_number}"
     cursor.execute(f"SELECT data, last_updated FROM {table_name} WHERE id = 1")
     
-    data, last_updated = cursor.fetchone()
+    result = cursor.fetchone()
     conn.close()
-    return json.loads(data), last_updated
+    
+    if result:
+        data, last_updated = result
+        return json.loads(data), last_updated
+    return {}, ""
 
 # Русские названия месяцев и дней
 months = [
@@ -466,8 +427,8 @@ months = [
     "июля", "августа", "сентября", "октября", "ноября", "декабря"
 ]
 
-days_of_week = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресеньe"]
-days_of_week_capitalized = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресеньe"]
+days_of_week = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
+days_of_week_capitalized = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 
 # Временные интервалы пар
 time_slots = {
@@ -479,8 +440,88 @@ time_slots = {
     "6": "18:15—19:50"
 }
 
-# Функция для отправки сообщения с клавиатурой
-def send_message(peer_id, message, keyboard=None):
+# Форматирование расписания на конкретный день
+def format_schedule_day(schedule_data, day_offset=0):
+    if not schedule_data:
+        return "Расписание пока не добавлено."
+    
+    target_date = datetime.datetime.now() + datetime.datetime.timedelta(days=day_offset)
+    day_name = days_of_week[target_date.weekday()]
+    day_name_cap = days_of_week_capitalized[target_date.weekday()]
+    day_num = target_date.day
+    month_name = months[target_date.month - 1]
+    
+    separator = "·" * 60
+    response = f"{separator}\n"
+    
+    if day_offset == 0:
+        response += f"🎯 {day_name_cap}, {day_num} {month_name} (сегодня)\n"
+    elif day_offset == 1:
+        response += f"📅 {day_name_cap}, {day_num} {month_name} (завтра)\n"
+    else:
+        response += f"📅 {day_name_cap}, {day_num} {month_name}\n"
+    
+    response += f"{separator}\n\n"
+    
+    if day_name in schedule_data and schedule_data[day_name]:
+        for lesson in schedule_data[day_name]:
+            time_range = time_slots.get(lesson['pair'], f"Пара {lesson['pair']}")
+            response += f"⏳ {lesson['pair']} пара ({time_range})\n"
+            response += f"📚 Предмет: {lesson['subject']}\n"
+            response += f"🏫 Тип: {lesson.get('type', 'Занятие')}\n"
+            response += f"👤 Преподаватель: {lesson['teacher']}\n"
+            response += f"🚪 Аудитория: {lesson['room']}\n\n"
+    else:
+        response += " Занятий нет\n\n"
+    
+    return response
+
+# Форматирование расписания на всю неделю
+def format_schedule_week(schedule_data, week_offset=0):
+    if not schedule_data:
+        return "Расписание пока не добавлено."
+    
+    separator = "·" * 60
+    response = ""
+    
+    today = datetime.datetime.now()
+    today_name = days_of_week[today.weekday()]
+    
+    for i, day_name in enumerate(days_of_week):
+        day_date = today + datetime.timedelta(days=i - today.weekday() + (week_offset * 7))
+        day_num = day_date.day
+        month_name = months[day_date.month - 1]
+        day_name_cap = days_of_week_capitalized[i]
+        
+        response += f"{separator}\n"
+        
+        is_today = (week_offset == 0 and day_name == today_name)
+        is_tomorrow = (week_offset == 0 and i == (today.weekday() + 1) % 7)
+        
+        if is_today:
+            response += f"🎯 {day_name_cap}, {day_num} {month_name} (сегодня)\n"
+        elif is_tomorrow:
+            response += f"📅 {day_name_cap}, {day_num} {month_name} (завтра)\n"
+        else:
+            response += f"📅 {day_name_cap}, {day_num} {month_name}\n"
+        
+        response += f"{separator}\n\n"
+        
+        if day_name in schedule_data and schedule_data[day_name]:
+            for lesson in schedule_data[day_name]:
+                time_range = time_slots.get(lesson['pair'], f"Пара {lesson['pair']}")
+                response += f"⏳ {lesson['pair']} пара ({time_range})\n"
+                response += f"📚 Предмет: {lesson['subject']}\n"
+                response += f"🏫 Тип: {lesson.get('type', 'Занятие')}\n"
+                response += f"👤 Преподаватель: {lesson['teacher']}\n"
+                response += f"🚪 Аудитория: {lesson['room']}\n\n"
+        else:
+            response += " Занятий нет\n\n"
+    
+    return response
+
+# Функция для отправки сообщения
+def send_message(peer_id, message, keyboard=None, delete_after=None):
     try:
         random_id = get_random_id()
         params = {
@@ -491,20 +532,84 @@ def send_message(peer_id, message, keyboard=None):
         if keyboard:
             params['keyboard'] = keyboard
             
-        vk_session.method('messages.send', params)
+        result = vk_session.method('messages.send', params)
+        
+        # Если указано время удаления, планируем удаление
+        if delete_after and isinstance(result, int):
+            schedule_message_deletion(peer_id, result, delete_after)
+        
+        return result
     except Exception as e:
         print(f"Ошибка отправки сообщения: {e}")
+        return None
+
+# Функция для закрепления сообщения
+def pin_message(peer_id, message_id):
+    try:
+        vk_session.method('messages.pin', {
+            'peer_id': peer_id,
+            'message_id': message_id
+        })
+        return True
+    except Exception as e:
+        print(f"Ошибка закрепления сообщения: {e}")
+        return False
+
+# Функция для автоматической отправки расписания
+def auto_send_tomorrow_schedule():
+    """Автоматическая отправка расписания на завтра в 19:00"""
+    while True:
+        now = datetime.datetime.now()
+        
+        # Проверяем, сейчас 19:00
+        if now.hour == 19 and now.minute == 20:
+            if CONFIG['chat_id']:
+                try:
+                    schedule, last_updated = load_schedule()
+                    tomorrow_schedule = format_schedule_day(schedule, 1)
+                    
+                    # Проверяем, есть ли занятия завтра
+                    target_date = datetime.datetime.now() + datetime.timedelta(days=1)
+                    day_name = days_of_week[target_date.weekday()]
+                    
+                    if day_name in schedule and schedule[day_name]:
+                        message = "📅 Расписание на завтра:\n\n" + tomorrow_schedule
+                        if last_updated:
+                            message += f"\n🔄 Обновлено: {last_updated}"
+                        
+                        # Отправляем и закрепляем сообщение
+                        message_id = send_message(CONFIG['chat_id'], message)
+                        if message_id:
+                            pin_message(CONFIG['chat_id'], message_id)
+                            print("Расписание на завтра отправлено и закреплено")
+                    else:
+                        print("На завтра занятий нет, расписание не отправляется")
+                
+                except Exception as e:
+                    print(f"Ошибка отправки расписания: {e}")
+            
+            # Ждем 1 минуту чтобы не повторять отправку
+            time.sleep(60)
+        else:
+            # Проверяем каждую минуту
+            time.sleep(60)
+
+# Запуск автоматической отправки расписания в отдельном потоке
+def start_auto_scheduler():
+    scheduler_thread = threading.Thread(target=auto_send_tomorrow_schedule)
+    scheduler_thread.daemon = True
+    scheduler_thread.start()
 
 # Инициализируем БД
 init_db()
-
-# Автоматически определяем текущую неделю
-CONFIG['current_week'] = get_current_week_number()
 
 # Подключаемся к VK
 vk_session = vk_api.VkApi(token=CONFIG['token'])
 longpoll = VkBotLongPoll(vk_session, CONFIG['group_id'])
 vk = vk_session.get_api()
+
+# Запускаем автоматическую отправку расписания
+start_auto_scheduler()
 
 print("Бот запущен...")
 
@@ -516,6 +621,11 @@ for event in longpoll.listen():
         peer_id = event.object.message['peer_id']
         original_text = event.object.message['text']
         
+        # Сохраняем ID беседы при первом сообщении
+        if event.from_chat and CONFIG['chat_id'] is None:
+            CONFIG['chat_id'] = peer_id
+            print(f"Бот добавлен в беседу: {peer_id}")
+        
         # Обработка команд системы докладов
         if event.from_chat:
             # Регистрация студента
@@ -525,8 +635,10 @@ for event in longpoll.listen():
                     student_number = parts[0]
                     success, message = register_student(user_id, student_number)
                     send_message(peer_id, message)
+                else:
+                    send_message(peer_id, "❌ Неверный формат! Используйте: Я [ваш номер]")
             
-            # Показать список предметов
+            # Показать список предметов (удаляется через 5 минут)
             elif msg == 'доклады':
                 subjects = get_all_subjects()
                 if subjects:
@@ -536,9 +648,9 @@ for event in longpoll.listen():
                     response += "\n🎯 Чтобы посмотреть доклады по предмету: 'Доклады по [предмет]'\n📝 Чтобы взять доклад: 'Беру доклад [номер] по [предмет]'"
                 else:
                     response = "📚 Пока нет предметов для докладов"
-                send_message(peer_id, response)
+                send_message(peer_id, response, delete_after=300)  # Удалить через 5 минут
             
-            # Показать доклады по предмету
+            # Показать доклады по предмету (удаляется через 5 минут)
             elif msg.startswith('доклады по '):
                 subject_name = original_text[11:].strip()
                 reports = get_subject_reports(subject_name)
@@ -558,7 +670,7 @@ for event in longpoll.listen():
                     response += f"📊 Свободно докладов: {free_count}/{len(reports)}"
                 else:
                     response = f"❌ Предмет '{subject_name}' не найден или в нем нет докладов"
-                send_message(peer_id, response)
+                send_message(peer_id, response, delete_after=300)  # Удалить через 5 минут
             
             # Взять доклад
             elif msg.startswith('беру доклад '):
@@ -578,7 +690,7 @@ for event in longpoll.listen():
                 except Exception as e:
                     send_message(peer_id, f"❌ Ошибка: {str(e)}")
             
-            # Мои доклады
+            # Мои доклады (удаляется через 5 минут)
             elif msg == 'мои доклады':
                 student_info = get_student_info(user_id)
                 if not student_info:
@@ -595,7 +707,7 @@ for event in longpoll.listen():
                             response += f"🕐 Взято: {assigned_at}\n\n"
                     else:
                         response = "❌ У вас пока нет взятых докладов"
-                    send_message(peer_id, response)
+                    send_message(peer_id, response, delete_after=300)  # Удалить через 5 минут
             
             # Команды для администраторов
             elif is_admin(user_id):
@@ -637,7 +749,7 @@ for event in longpoll.listen():
                     except ValueError:
                         send_message(peer_id, "❌ Неверный ID пользователя")
                 
-                # Статистика по предмету
+                # Статистика по предмету (удаляется через 5 минут)
                 elif msg.startswith('!статистика '):
                     subject_name = original_text[12:].strip()
                     reports = get_subject_reports(subject_name)
@@ -661,23 +773,67 @@ for event in longpoll.listen():
                                     response += f"• {student_name} - доклад #{report_num}\n"
                     else:
                         response = f"❌ Предмет '{subject_name}' не найден"
-                    send_message(peer_id, response)
+                    send_message(peer_id, response, delete_after=300)  # Удалить через 5 минут
             
-            # Обработка остальных команд (расписание, ДЗ и т.д.)
-            # ... [здесь должен быть остальной код обработки команд] ...
+            # Обработка команд расписания
+            elif msg == 'расписание' or msg == 'сегодня':
+                schedule, last_updated = load_schedule()
+                response = format_schedule_day(schedule, 0)
+                if last_updated:
+                    response += f"\n🔄 Обновлено: {last_updated}"
+                send_message(peer_id, response)
+            
+            elif msg == 'завтра':
+                schedule, last_updated = load_schedule()
+                response = format_schedule_day(schedule, 1)
+                if last_updated:
+                    response += f"\n🔄 Обновлено: {last_updated}"
+                send_message(peer_id, response)
+            
+            elif msg == 'неделя':
+                schedule, last_updated = load_schedule()
+                response = format_schedule_week(schedule, 0)
+                if last_updated:
+                    response += f"\n🔄 Обновлено: {last_updated}"
+                send_message(peer_id, response)
+            
+            elif msg == 'след неделя':
+                next_week = (CONFIG['current_week'] % 4) + 1
+                schedule, last_updated = load_schedule(next_week)
+                response = f"📅 Следующая неделя\n\n" + format_schedule_week(schedule, 1)
+                if last_updated:
+                    response += f"\n🔄 Обновлено: {last_updated}"
+                send_message(peer_id, response)
             
             continue
         
         # Обработка личных сообщений для администраторов
         if event.from_user and is_admin(user_id):
-            # Обработка JSON для расписания
+            # Обработка JSON для расписания (без публикации в беседу)
             try:
                 new_schedule = json.loads(original_text)
                 if isinstance(new_schedule, dict):
                     update_time = save_schedule(new_schedule)
-                    send_message(peer_id, f"✅ Расписание обновлено! {update_time}")
+                    send_message(peer_id, f"✅ Расписание обновлено и сохранено! {update_time}")
             except json.JSONDecodeError:
-                # Обработка других команд админа
-                pass
+                # Обработка других команд админа в ЛС
+                if msg == 'помощь':
+                    help_text = """
+⚙️ Команды администратора:
 
-# ... [остальной код остается без изменений] ...
+📚 Управление докладами:
+!создать предмет [название] - создать предмет
+!добавить доклад [предмет];[номер];[название];[макс.кол-во] - добавить доклад
+!статистика [предмет] - статистика по предмету
+
+👥 Управление админами:
+!добавить админа [ID] - добавить администратора
+
+📅 Управление расписанием:
+Отправьте JSON с расписанием для обновления (сохраняется без публикации в беседу)
+
+🕐 Автоматические функции:
+• В 19:00 бот автоматически отправляет и закрепляет расписание на завтра
+• Сообщения со списками докладов удаляются через 5 минут
+                    """
+                    send_message(peer_id, help_text)
