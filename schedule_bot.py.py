@@ -562,7 +562,7 @@ def auto_send_tomorrow_schedule():
         now = datetime.datetime.now()
         
         # Проверяем, сейчас 19:00
-        if now.hour == 19 and now.minute == 20:
+        if now.hour == 19 and now.minute == 25:
             if CONFIG['chat_id']:
                 try:
                     schedule, last_updated = load_schedule()
@@ -837,3 +837,4 @@ for event in longpoll.listen():
 • Сообщения со списками докладов удаляются через 5 минут
                     """
                     send_message(peer_id, help_text)
+
