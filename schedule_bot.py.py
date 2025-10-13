@@ -832,10 +832,11 @@ def take_report_for_student(user_id, subject_name, report_number):
     )
     
     # Добавляем запись о назначении
-    cursor.execute(
-        "INSERT INTO report_assignments (user_id, subject_name, report_number, report_title, assigned_at) VALUES (?, ?, ?, ?, ?)",
-        (user_id, subject_name, report_number, report_info["title"], current_time)
-    )
+    # Обновляем данные предмета
+cursor.execute(
+    "UPDATE reports_system SET report_data = ? WHERE subject_name = ?",
+    (json.dumps(report_data, ensure_ascii=False), subject_name)  # ← referat_data → report_data
+)
     
     conn.commit()
     conn.close()
@@ -1511,4 +1512,5 @@ for event in longpoll.listen():
 • Сообщения со списками докладов удаляются через 5 минут
                     """
                     send_message(peer_id, help_text)
+
 
