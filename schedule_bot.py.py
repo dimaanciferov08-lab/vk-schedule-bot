@@ -31,7 +31,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # !!! ЗАПОЛНИ ЭТИ ДАННЫЕ СВОИМИ !!!
 CONFIG = {
     "group_id": 232761329,
-    "token": "vk1.a.Y2xBv4alWQ55rd1IxtkpKc48ibKqpQ1x0Wyc9Hv0z18elxu3JaSBfCi7F5sJ9H4eKy1jg3iqFOjQTkQyCIYdnf77mcezdC__MLiyRi9Xwfus_uLz7UWd9AR8VPQDr7uMEiD1NxadTzqUllP7p4uqWixuefYkm6ryhgMbFLPSo-hnXKyt0XQ4qvpfIG5kLWlJoH7Ivew1yhgiKmtDWhbHYw",
+    "token": "vk1.a.4H01TrKnHaptERzMMk--UMQ2vKYzbJ1qJ-fu10HuJkylYkaYVKvS0IKaHm1G2d38oaYIrzA9y989v9r_RYmDuUoCR6x4_cRXo2F1Wxz5w7ienFUR62xA6OTLqZ3mo574R5RFe2G0yevihcRWu-7NIh6c_rFWYhXIuWo6MKsfvb8rcMoIFNVIRHMRMxsrjU2XO3pelu3_OyzZER41uPE8sQ",
     "admin_id": 238448950,
     "current_week": 1,
     "chat_id": None,  # ID беседы для автоматических уведомлений
@@ -1511,3 +1511,4 @@ for event in longpoll.listen():
 • Сообщения со списками докладов удаляются через 5 минут
                     """
                     send_message(peer_id, help_text)
+
