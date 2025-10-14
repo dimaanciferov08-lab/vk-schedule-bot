@@ -691,15 +691,19 @@ def send_document(peer_id, file_stream, filename, message=""):
             return False
             
         result = response.json()
-        print(f"📤 Файл загружен на сервер")
+        print(f"📤 Файл загружен на сервер: {result}")
         
-        # Сохраняем документ
+        # Сохраняем документ - ИСПРАВЛЕННАЯ ЧАСТЬ
         doc_data = vk_session.method('docs.save', {
-            'file': result['file']
+            'file': result['file'],
+            'title': filename,
+            'tags': 'реферат'
         })
         
+        print(f"📤 Ответ от docs.save: {doc_data}")
+        
         if not doc_data:
-            print("❌ Ошибка сохранения документа")
+            print("❌ Ошибка сохранения документа: пустой ответ")
             return False
             
         doc = doc_data[0]
@@ -714,11 +718,13 @@ def send_document(peer_id, file_stream, filename, message=""):
             'random_id': get_random_id()
         })
         
-        print(f"✅ Документ успешно отправлен!")
+        print(f"✅ Документ успешно отправлен: {send_result}")
         return True
         
     except Exception as e:
         print(f"❌ Ошибка отправки документа: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 # Инициализируем БД
@@ -1018,3 +1024,4 @@ for event in longpoll.listen():
                 
     except Exception as e:
         print(f"💥 Ошибка обработки сообщения: {e}")
+
