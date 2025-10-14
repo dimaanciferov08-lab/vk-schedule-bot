@@ -706,8 +706,17 @@ def send_document(peer_id, file_stream, filename, message=""):
             print("❌ Ошибка сохранения документа: пустой ответ")
             return False
             
-        doc = doc_data[0]
-        attachment = f"doc{doc['owner_id']}_{doc['id']}"
+        # ИСПРАВЛЕНИЕ: docs.save возвращает словарь с ключом 'doc', а не список
+        if 'doc' in doc_data:
+            doc = doc_data['doc']
+            attachment = f"doc{doc['owner_id']}_{doc['id']}"
+        elif 'type' in doc_data and doc_data['type'] == 'doc':
+            doc = doc_data['doc']
+            attachment = f"doc{doc['owner_id']}_{doc['id']}"
+        else:
+            print(f"❌ Неизвестный формат ответа: {doc_data}")
+            return False
+            
         print(f"📤 Документ сохранен: {attachment}")
         
         # Отправляем сообщение с документом
@@ -726,7 +735,7 @@ def send_document(peer_id, file_stream, filename, message=""):
         import traceback
         traceback.print_exc()
         return False
-
+        
 # Инициализируем БД
 init_db()
 
@@ -1024,4 +1033,5 @@ for event in longpoll.listen():
                 
     except Exception as e:
         print(f"💥 Ошибка обработки сообщения: {e}")
+
 
