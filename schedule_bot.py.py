@@ -28,7 +28,7 @@ CONFIG = {
     "token": "vk1.a.Y2xBv4alWQ55rd1IxtkpKc48ibKqpQ1x0Wyc9Hv0z18elxu3JaSBfCi7F5sJ9H4eKy1jg3iqFOjQTkQyCIYdnf77mcezdC__MLiyRi9Xwfus_uLz7UWd9AR8VPQDr7uMEiD1NxadTzqUllP7p4uqWixuefYkm6ryhgMbFLPSo-hnXKyt0XQ4qvpfIG5kLWlJoH7Ivew1yhgiKmtDWhbHYw",
     "admin_id": 238448950,
     "current_week": 1,
-    "allowed_chats": [2000000002],
+    "allowed_chats": [2000000001, 2000000002],
     "chat_id": None
 }
 
@@ -1720,3 +1720,4 @@ for event in longpoll.listen():
     except Exception as e:
         print(f"❌ Ошибка в главном цикле: {e}")
         continue
+
