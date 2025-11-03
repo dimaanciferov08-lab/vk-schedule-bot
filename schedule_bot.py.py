@@ -659,6 +659,7 @@ def main():
             logger.exception("Error handling event: %s", e)
 
 
-if name == "main":
+if __name__ == "__main__":
     main()
+
 
