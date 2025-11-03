@@ -52,7 +52,7 @@ except Exception:
 
 # ------------- CONFIG -------------
 VK_TOKEN = os.getenv("vk1.a.Y2xBv4alWQ55rd1IxtkpKc48ibKqpQ1x0Wyc9Hv0z18elxu3JaSBfCi7F5sJ9H4eKy1jg3iqFOjQTkQyCIYdnf77mcezdC__MLiyRi9Xwfus_uLz7UWd9AR8VPQDr7uMEiD1NxadTzqUllP7p4uqWixuefYkm6ryhgMbFLPSo-hnXKyt0XQ4qvpfIG5kLWlJoH7Ivew1yhgiKmtDWhbHYw") or "<PUT_YOUR_VK_GROUP_TOKEN_HERE>"
-VK_GROUP_ID = int(os.getenv("232761329") or os.getenv("VK_GROUP", "0") or 0)
+VK_GROUP_ID = int(os.getenv("232761329") or os.getenv("232761329", "0") or 0)
 
 # Timetable site
 MAU_TIMETABLE_URL = "https://mauniver.ru/student/timetable/new/"
@@ -661,5 +661,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
