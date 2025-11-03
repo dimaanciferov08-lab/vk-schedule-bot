@@ -118,9 +118,9 @@ def get_user_group(user_id: int):
     conn.close()
     return row[0] if row else None
     def cache_schedule_put(key: str, data: dict):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute(
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute(
         "INSERT OR REPLACE INTO schedule_cache (key, data, fetched_at) VALUES (?, ?, ?)",
         (key, json.dumps(data, ensure_ascii=False), datetime.utcnow().isoformat()),
     )
@@ -661,3 +661,4 @@ def main():
 
 if name == "main":
     main()
+
